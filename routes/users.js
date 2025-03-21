@@ -1,44 +1,82 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../config/db');
+const connection = require("../config/db");
+const { body, validationResult } = require("express-validator");
 
-// GET all users (already working)
-router.get('/', (req, res) => {
-    db.query('SELECT * FROM users', (err, results) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json(results);
-    });
-});
-
-// POST a new user
-router.post('/', (req, res) => {
-    const { name, email } = req.body;
-    if (!name || !email) {
-        return res.status(400).json({ error: 'Name and email are required' });
+// Get all users
+router.get("/", (req, res) => {
+  connection.query("SELECT * FROM users", (err, results) => {
+    if (err) {
+      return res.status(500).json({ success: false, message: "Database error", error: err });
     }
-    db.query('INSERT INTO users (name, email) VALUES (?, ?)', [name, email], (err, result) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.status(201).json({ id: result.insertId, name, email });
-    });
+    res.json({ success: true, users: results });
+  });
 });
 
-router.post('/', (req, res) => {
-    console.log('POST Request Body:', req.body); // Debug input
-    const { name, email } = req.body;
-    if (!name || !email) {
-        console.log('Validation failed: Missing fields');
-        return res.status(400).json({ error: 'Name and email are required' });
+// Add a new user with validation
+router.post(
+  "/",
+  [
+    body("name").notEmpty().withMessage("Name is required"),
+    body("email").isEmail().withMessage("Invalid email format"),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
     }
-    db.query('INSERT INTO users (name, email) VALUES (?, ?)', [name, email], (err, result) => {
-        if (err) {
-            console.log('MySQL Error:', err);
-            return res.status(500).json({ error: err.message });
-        }
-        res.status(201).json({ id: result.insertId, name, email });
+
+    const { name, email } = req.body;
+    connection.query("INSERT INTO users (name, email) VALUES (?, ?)", [name, email], (err, result) => {
+      if (err) {
+        return res.status(500).json({ success: false, message: "Database error", error: err });
+      }
+      res.json({ success: true, message: "User added successfully", userId: result.insertId });
     });
+  }
+);
+
+// Update a user
+router.put(
+  "/:id",
+  [
+    body("name").optional().notEmpty().withMessage("Name cannot be empty"),
+    body("email").optional().isEmail().withMessage("Invalid email format"),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { name, email } = req.body;
+    const { id } = req.params;
+
+    connection.query("UPDATE users SET name=?, email=? WHERE id=?", [name, email, id], (err, result) => {
+      if (err) {
+        return res.status(500).json({ success: false, message: "Database error", error: err });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      res.json({ success: true, message: "User updated successfully" });
+    });
+  }
+);
+
+// Delete a user
+router.delete("/:id", (req, res) => {
+  const { id } = req.params;
+
+  connection.query("DELETE FROM users WHERE id=?", [id], (err, result) => {
+    if (err) {
+      return res.status(500).json({ success: false, message: "Database error", error: err });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    res.json({ success: true, message: "User deleted successfully" });
+  });
 });
+
 module.exports = router;
